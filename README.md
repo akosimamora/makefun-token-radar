@@ -1,6 +1,10 @@
 # Token Launch Radar
 
-Entry for make.fun competition **token-radar-01** — "Build the best token launch radar".
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/akosimamora/makefun-token-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard)
+[![reward](https://make.fun/badge/token-radar-01/akosimamora/makefun-token-radar/reward.svg)](https://make.fun/bounty/token-radar-01)
+
+Entry for make.fun competition **token-radar-01** — "Build the best token launch radar". Bounty page: https://make.fun/bounty/token-radar-01
 
 A Node 22 program (`main.ts`, standard library only) reads the sealed
 DefiLlama snapshot at `/input/snapshot.json` (a local copy at
