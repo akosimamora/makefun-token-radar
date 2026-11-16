@@ -309,7 +309,9 @@ function farmSteps(
 }
 
 function parseArgs(argv: string[]): { input: string; templates: string } {
-  let input = 'input/snapshot.json';
+  // Sealed run mounts the snapshot read-only at /input and the repo does not
+  // ship it; fall back to the local copy only when /input is absent.
+  let input = existsSync('/input/snapshot.json') ? '/input/snapshot.json' : 'input/snapshot.json';
   let templates = 'farm-templates.json';
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--input' && i + 1 < argv.length) input = argv[++i]!;
