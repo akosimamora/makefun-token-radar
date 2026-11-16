@@ -63,7 +63,15 @@
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-board.ts';
+
+// The repository's own directory, from this file's location — never the
+// working directory: the grader runs `node /bot/main.ts` with cwd /bot, but
+// a run from any other directory must still find the templates, the
+// dashboard and the screenshots beside this file, exactly as the house
+// starter does.
+const here = fileURLToPath(new URL('.', import.meta.url));
 
 interface Protocol {
   slug: string;
@@ -310,9 +318,15 @@ function farmSteps(
 
 function parseArgs(argv: string[]): { input: string; templates: string } {
   // Sealed run mounts the snapshot read-only at /input and the repo does not
-  // ship it; fall back to the local copy only when /input is absent.
-  let input = existsSync('/input/snapshot.json') ? '/input/snapshot.json' : 'input/snapshot.json';
-  let templates = 'farm-templates.json';
+  // ship it; fall back to the local copy only when /input is absent. The
+  // driver's MAKEFUN_INPUT_DIR names the same mount when it is set.
+  const inputDir = process.env['MAKEFUN_INPUT_DIR'];
+  let input = existsSync('/input/snapshot.json')
+    ? '/input/snapshot.json'
+    : inputDir !== undefined && existsSync(join(inputDir, 'snapshot.json'))
+      ? join(inputDir, 'snapshot.json')
+      : 'input/snapshot.json';
+  let templates = join(here, 'farm-templates.json');
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--input' && i + 1 < argv.length) input = argv[++i]!;
     if (argv[i] === '--templates' && i + 1 < argv.length) templates = argv[++i]!;
@@ -489,13 +503,13 @@ function main(): void {
   );
 
   for (const name of ['index.html', 'app.css', 'app.js']) {
-    const src = join('dashboard', name);
+    const src = join(here, 'dashboard', name);
     if (existsSync(src)) {
       const bytes = readFileSync(src);
       writeFileSync(join(outDir, 'dashboard', name), bytes);
     }
   }
-  const shotDir = 'screenshots';
+  const shotDir = join(here, 'screenshots');
   if (existsSync(shotDir)) {
     for (const name of readdirSync(shotDir).sort()) {
       if (name.startsWith('.')) continue;
