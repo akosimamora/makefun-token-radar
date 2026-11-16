@@ -2,10 +2,11 @@
 
 Entry for make.fun competition **token-radar-01** — "Build the best token launch radar".
 
-A Node 22 program (`main.ts`, standard library only) reads the frozen DefiLlama
-snapshot at `input/snapshot.json`, ranks pre-token protocols by an implied
-token value, and writes a sortable/filterable dashboard plus a farm plan for
-every protocol.
+A Node 22 program (`main.ts`, standard library only) reads the sealed
+DefiLlama snapshot at `/input/snapshot.json` (a local copy at
+`input/snapshot.json` works for runs outside the sealed container), ranks
+pre-token protocols by an implied token value, and writes a sortable/filterable
+dashboard plus a farm plan for every protocol.
 
 ## How it runs
 
@@ -39,7 +40,8 @@ last with nominal values and an honest note instead of a farm plan.
 - `vendor/makefun-board.ts` — the dossier library shipped by the kit
 - `dashboard/` — the static page (no network)
 - `screenshots/` — three renders of the dashboard
-- `input/snapshot.json` — the frozen snapshot the program reads
 - `farm-templates.json` — farm-plan step templates by protocol category
+  (the snapshot itself is not shipped: the sealed run reads it at
+  `/input/snapshot.json`)
 
 License: MIT.
