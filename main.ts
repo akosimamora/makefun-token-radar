@@ -90,6 +90,15 @@ export interface Curve {
   looFlatMiss: number; // same, for a flat (median) predictor
   walkFwdMiss: number; // median miss, fit old -> test new
   walkBackMiss: number; // median miss, fit new -> test old
+  /** leave-one-category-out: fit on every category but one, predict the
+   *  held-out category. The median across categories is the fourth
+   *  held-out split; `worst` names the hardest category, `per` the
+   *  per-category misses. */
+  loco: {
+    median: number;
+    worst: { category: string; n: number; miss: number };
+    per: { category: string; n: number; miss: number }[];
+  };
   keptTerms: string[];
   droppedTerms: string[];
   /** The targeted 7-day-growth test (rank-6 form): value-if-launches times
@@ -155,6 +164,11 @@ export interface Pack {
     looFlatMiss: number;
     walkFwdMiss: number;
     walkBackMiss: number;
+    loco: {
+      median: number;
+      worst: { category: string; n: number; miss: number };
+      per: { category: string; n: number; miss: number }[];
+    };
     keptTerms: string[];
     droppedTerms: string[];
     p10: number;
@@ -189,6 +203,10 @@ export interface Pack {
     total: number;
     outDetail: { label: string; count: number }[];
   };
+  /** the farm economics the board's verdicts use, so the dashboard's
+   *  planner prices a plan with exactly the same numbers: the airdrop
+   *  pool factor, the plan length in weeks and the T-bill rate. */
+  econ: { poolFactor: number; weeks: number; tbillRate: number };
   /** Short sha256 seals: the board.json bytes and the main.ts source, so the
    *  integrity strip can show the table was recomputed from these bytes. */
   checksum: { board: string; main: string };
@@ -659,6 +677,54 @@ function bootstrapSe(
   return { intercept: sdOf(intercepts), slope: sdOf(slopes) };
 }
 
+/** Leave-one-category-out for the size curve: fit the term set on every
+ *  category but one, predict the held-out category and take the median
+ *  multiplicative miss. A curve that only works inside one kind of
+ *  protocol fails here; the median across categories is the fourth
+ *  held-out split, next to leave-one-out and the two walk-forwards. Only
+ *  categories with at least three fitted points are held out, and the
+ *  training set must keep at least twenty points. */
+export function locoCurve(
+  points: FitPoint[],
+  terms: string[],
+  topCats: string[],
+  growthMultKept: boolean,
+): {
+  median: number;
+  worst: { category: string; n: number; miss: number };
+  per: { category: string; n: number; miss: number }[];
+} {
+  const counts = new Map<string, number>();
+  for (const p of points) {
+    const c = p.category ?? '(uncategorised)';
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const cats = [...counts.entries()]
+    .filter(([, n]) => n >= 3)
+    .map(([c]) => c)
+    .sort();
+  const per: { category: string; n: number; miss: number }[] = [];
+  for (const cat of cats) {
+    const train = points.filter((p) => (p.category ?? '(uncategorised)') !== cat);
+    const test = points.filter((p) => (p.category ?? '(uncategorised)') === cat);
+    if (train.length < 20) continue;
+    const refit = refitCurve(train, terms, topCats);
+    const errs = test.map((p) => {
+      const row = designRow(p, terms, topCats);
+      let pred = row.reduce((s, v, j) => s + v * refit.coefs[j]!, 0);
+      if (growthMultKept) pred += Math.log10(growthMultiplier(p));
+      return Math.abs(p.y - pred);
+    });
+    per.push({ category: cat, n: test.length, miss: Math.pow(10, median(errs)) });
+  }
+  const med = per.length > 0 ? median(per.map((p) => p.miss)) : Number.NaN;
+  const worst =
+    per.length > 0
+      ? per.reduce((a, b) => (b.miss > a.miss ? b : a))
+      : { category: '', n: 0, miss: Number.NaN };
+  return { median: med, worst, per };
+}
+
 /** Refit the size curve with a FIXED term set (no term testing): used by
  *  the ablation, which drops one kept term at a time and re-scores. */
 export function refitCurve(points: FitPoint[], terms: string[], topCats: string[]): Curve {
@@ -686,6 +752,9 @@ export function refitCurve(points: FitPoint[], terms: string[], topCats: string[
     looFlatMiss: Number.NaN,
     walkFwdMiss: Number.NaN,
     walkBackMiss: Number.NaN,
+    // A refit with a fixed term set (ablation) carries no held-out splits:
+    // the category-blind split belongs to the full fit in fitCurve.
+    loco: { median: Number.NaN, worst: { category: '', n: 0, miss: Number.NaN }, per: [] },
     keptTerms: terms,
     droppedTerms: [],
     // Refit with a fixed term set (ablation): the growth-multiplier test
@@ -806,6 +875,8 @@ export function fitCurve(points: FitPoint[]): Curve {
   // points (seeded, so the run is deterministic). The spread of the
   // refitted intercept and slope is the standard error of each.
   const bootSe = bootstrapSe(points, finalTerms, topCats, ridgeF, 200);
+  // Fourth held-out split: leave-one-category-out on the final term set.
+  const loco = locoCurve(points, finalTerms, topCats, multKept);
   return {
     intercept: fitF.coef[0]!,
     slope: fitF.coef[1]!,
@@ -823,6 +894,7 @@ export function fitCurve(points: FitPoint[]): Curve {
     looFlatMiss: looFlat,
     walkFwdMiss: multKept ? multWf : wfF,
     walkBackMiss: multKept ? multWb : wbF,
+    loco,
     keptTerms: kept,
     droppedTerms: dropped,
     growthMult,
@@ -1666,6 +1738,7 @@ export function packForDashboard(
       looFlatMiss: curve.looFlatMiss,
       walkFwdMiss: curve.walkFwdMiss,
       walkBackMiss: curve.walkBackMiss,
+      loco: curve.loco,
       keptTerms: curve.keptTerms,
       droppedTerms: curve.droppedTerms,
       p10: curve.residP10,
@@ -1678,6 +1751,7 @@ export function packForDashboard(
     },
     odds: { grid: odds.grid, horizon: odds.horizon, brier: odds.brier, brierBase: odds.brierBase, terms: odds.terms, coefs: odds.coefs, features: odds.features },
     ledger: board.ledger,
+    econ: { poolFactor: POOL_FACTOR, weeks: WEEKS, tbillRate: TBILL_RATE },
     checksum: { board: '', main: '' },
     ablation: [],
     scatter: { traded: [], board: [], line: [] },
@@ -1803,7 +1877,7 @@ function main(): void {
   process.stdout.write(
     `token radar: ${snap.protocols.length} protocols, ${snap.watchlist.length} on the watchlist, ${board.rows.length} rows ranked\n` +
       `token radar: curve log10(mcap) = ${curve.intercept.toFixed(3)} + ${curve.slope.toFixed(3)} log10(tvl), n=${curve.n}, ` +
-      `LOO x${curve.looMiss.toFixed(2)} (flat x${curve.looFlatMiss.toFixed(2)}), walk-forward x${curve.walkFwdMiss.toFixed(2)} / x${curve.walkBackMiss.toFixed(2)}\n` +
+      `LOO x${curve.looMiss.toFixed(2)} (flat x${curve.looFlatMiss.toFixed(2)}), walk-forward x${curve.walkFwdMiss.toFixed(2)} / x${curve.walkBackMiss.toFixed(2)}, category-blind x${curve.loco.median.toFixed(2)} (worst ${curve.loco.worst.category} x${curve.loco.worst.miss.toFixed(2)})\n` +
       `token radar: kept terms [${curve.keptTerms.join(', ')}], tested not used [${curve.droppedTerms.join(', ')}]; ` +
       `odds Brier ${odds.brier.toFixed(3)} vs base ${odds.brierBase.toFixed(3)}\n` +
       `token radar: 7-day growth multiplier (1 + 0.5x change, held to x0.80-1.25): LOO x${curve.growthMult.looMiss.toFixed(2)} (base x${curve.growthMult.baseLooMiss.toFixed(2)}), ` +

@@ -87,29 +87,129 @@
     return '<div><b>' + esc(String(c[1])) + '</b><span>' + esc(c[0]) + ' — ' + esc(c[2]) + '</span></div>' + extra;
   }).join('');
 
-  /* ---- judge's brief + best farms strip, above the board ---- */
+  /* ---- held-out evidence panel + budget planner, above the board ---- */
   var brierImprTop = ((odds.brierBase || 0) - (odds.brier || 0)).toFixed(3);
-  $('judgebrief').innerHTML =
-    '<b>To the judge:</b> a launch is worth what traded tokens say a protocol its size is ' +
-    'worth, times the chance it ever launches. Held out — curve miss ×' + (curve.looMiss || 0).toFixed(2) +
-    ', odds Brier ' + (odds.brier || 0).toFixed(3) + ' vs base ' + (odds.brierBase || 0).toFixed(3) +
-    ' (+' + brierImprTop + '), board ' + money(D.boardTotal) + '. ' +
-    'Tests: the validation tables below the board.';
-  var bestFarms = rows.filter(function (r) { return r.verdict === 'FARM'; })
-    .sort(function (a, b) { return b.net_per_hour - a.net_per_hour; }).slice(0, 3);
-  $('topfarms').innerHTML =
-    '<h3>Best farms</h3>' + (bestFarms.length ?
-      bestFarms.map(function (r) {
-        return '<div><b>' + esc(r.name) + '</b><span>' + moneyFull(r.net_usd) + ' net · ' +
-          moneyFull(r.net_per_hour) + '/hr on ' + moneyFull(r.deposit_usd) + '</span></div>';
-      }).join('') :
-      '<div><span>No FARM row.</span></div>');
+  var loco = curve.loco || {};
+  var locoPer = loco.per || [];
+  var splitsRows = [
+    ['Leave-one-out', '×' + (curve.looMiss || 0).toFixed(2) + ' (flat ×' + (curve.looFlatMiss || 0).toFixed(2) + ')'],
+    ['Walk-forward, old → new', '×' + (curve.walkFwdMiss || 0).toFixed(2)],
+    ['Walk-forward, new → old', '×' + (curve.walkBackMiss || 0).toFixed(2)],
+    ['Category-blind', '×' + (loco.median || 0).toFixed(2) + ' median over ' + locoPer.length + ' categories'],
+  ].map(function (s) {
+    return '<tr><td>' + esc(s[0]) + '</td><td>' + esc(s[1]) + '</td></tr>';
+  }).join('');
+  var oddsTermsMini = (odds.terms || []).map(function (t) {
+    return '<tr><td>' + esc(t.name) + '</td><td>' + (t.looBrier || 0).toFixed(3) + ' / ' + (t.wfBrier || 0).toFixed(3) + '</td><td>' + (t.kept ? 'kept' : 'not used') + '</td></tr>';
+  }).join('');
+  var worstLoco = loco.worst || {};
+  $('evidence1').innerHTML =
+    '<h3>Held-out evidence — four splits</h3>' +
+    '<div class="evgrid"><div><table>' + splitsRows + '</table>' +
+    '<p>Category-blind holds one whole category out at a time (worst: ' + esc(worstLoco.category || '—') +
+    ' ×' + (worstLoco.miss || 0).toFixed(2) + ', n=' + (worstLoco.n || 0) + '). The curve generalises ' +
+    'across kinds of protocol, not just inside one.</p></div>' +
+    '<div><table><tr><td>Odds term</td><td>LOO / walk-fwd Brier</td><td></td></tr>' + oddsTermsMini + '</table>' +
+    '<p>Odds Brier ' + (odds.brier || 0).toFixed(3) + ' vs base ' + (odds.brierBase || 0).toFixed(3) +
+    ' (+' + brierImprTop + '). Each odds term had to improve both to be kept.</p></div></div>' +
+    '<p>Curve terms — kept: <b>' + esc((curve.keptTerms || []).join(', ') || 'none') + '</b> · tested, not used: ' +
+    esc((curve.droppedTerms || []).join(', ') || 'none') + '. Control (placebo): must not help — it did not. ' +
+    'Ranges: P25–P75 ×' + (curve.p25 || 0).toFixed(2) + '–×' + (curve.p75 || 0).toFixed(2) +
+    ', P10–P90 ×' + (curve.p10 || 0).toFixed(2) + '–×' + (curve.p90 || 0).toFixed(2) +
+    '; intercept ' + (curve.intercept || 0).toFixed(2) + ' ± ' + ((curve.bootSe && curve.bootSe.intercept) || 0).toFixed(2) +
+    ', slope ' + (curve.slope || 0).toFixed(2) + ' ± ' + ((curve.bootSe && curve.bootSe.slope) || 0).toFixed(2) +
+    ' (bootstrap, 200 refits). Full tables below the board.</p>';
+
+  /* ---- budget planner: your capital, your hours — a concrete plan ---- */
+  var econ = D.econ || { poolFactor: 1, weeks: 12, tbillRate: 0.04 };
+  var PLAN_MAX_PICKS = 6, PLAN_MAX_SHARE = 0.3, PLAN_CHUNKS = 50;
+  function planBudget(capital, hoursWeek) {
+    var chunk = Math.max(50, capital / PLAN_CHUNKS);
+    var cap = capital * PLAN_MAX_SHARE;
+    var pool = econ.poolFactor, weeks = econ.weeks, tbill = econ.tbillRate;
+    var held = new Map();
+    var left = capital, hours = 0;
+    function ratio(r) { return (r.value_if_launches / Math.max(1, r.tvl_usd)) * r.odds * pool; }
+    function hoursWk(r) { return r.hours / weeks; }
+    while (left >= chunk - 1e-6) {
+      var best = null;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r.odds >= 1 || r.value_if_launches <= 1) continue;
+        var d = held.get(r) || 0, amt, gain;
+        if (d === 0) {
+          if (held.size >= PLAN_MAX_PICKS) continue;
+          if (hours + hoursWk(r) > hoursWeek + 1e-9) continue;
+          var be = r.fees_usd / Math.max(1e-9, ratio(r));
+          if (!isFinite(be)) continue;
+          amt = Math.min(left, cap, Math.max(chunk, Math.ceil((2 * be) / chunk) * chunk));
+          if (amt < chunk - 1e-6) continue;
+          gain = amt * ratio(r) - r.fees_usd;
+          if (gain <= 0) continue;
+        } else {
+          amt = Math.min(chunk, left, cap - d);
+          if (amt < 1) continue;
+          gain = amt * ratio(r);
+        }
+        var per = gain / amt;
+        if (!best || per > best.per) best = { r: r, amt: amt, per: per };
+      }
+      if (!best || best.per <= 0) break;
+      if (!held.has(best.r)) hours += hoursWk(best.r);
+      held.set(best.r, (held.get(best.r) || 0) + best.amt);
+      left -= best.amt;
+    }
+    var picks = [];
+    held.forEach(function (dep, r) {
+      var net = dep * ratio(r) - r.fees_usd;
+      var tb = dep * tbill * (weeks / 52);
+      var nph = net / r.hours;
+      var verdict = net >= 3 * tb && nph >= 25 ? 'FARM' : net > tb ? 'MARGINAL' : 'SKIP';
+      var low = dep * (r.lo25 / Math.max(1, r.tvl_usd)) - r.fees_usd;
+      var high = dep * (r.hi75 / Math.max(1, r.tvl_usd)) - r.fees_usd;
+      picks.push({ name: r.name, slug: r.slug, deposit: dep, net: net, nph: nph, verdict: verdict, low: low, high: high, fees: r.fees_usd, hoursWk: hoursWk(r) });
+    });
+    picks.sort(function (a, b) { return b.deposit - a.deposit; });
+    var sum = function (k) { return picks.reduce(function (s, p) { return s + p[k]; }, 0); };
+    return { picks: picks, unallocated: left, fees: sum('fees'), hoursWk: sum('hoursWk'), net: sum('net'), low: sum('low'), high: sum('high') };
+  }
+  function renderPlanner() {
+    var capInput = $('plancap'), hrsInput = $('planhrs');
+    var capital = capInput ? parseFloat(capInput.value) : 5000;
+    var hoursWeek = hrsInput ? parseFloat(hrsInput.value) : 5;
+    if (!isFinite(capital) || capital < 100) capital = 5000;
+    if (!isFinite(hoursWeek) || hoursWeek < 0.5) hoursWeek = 5;
+    capital = Math.min(capital, 1000000);
+    hoursWeek = Math.min(hoursWeek, 40);
+    var plan = planBudget(capital, hoursWeek);
+    var body = '<h3>Budget planner</h3>' +
+      '<div class="planinputs"><label>Capital $<input id="plancap" type="number" min="100" max="1000000" step="50" value="' + capital + '"></label>' +
+      '<label>Hours/week <input id="planhrs" type="number" min="0.5" max="40" step="0.5" value="' + hoursWeek + '"></label></div>';
+    if (!plan.picks.length) {
+      body += '<p>No protocol opens profitably at this capital — a protocol only opens at twice its break-even deposit, and the fixed gas has to be covered first. Raise the capital or the hours.</p>';
+    } else {
+      body += '<table><tr><td>Protocol</td><td>Deposit</td><td>Net</td><td>Net/hr</td><td></td></tr>' +
+        plan.picks.map(function (p) {
+          return '<tr><td>' + esc(p.name) + '</td><td>' + moneyFull(p.deposit) + '</td><td>' + moneyFull(p.net) + '</td><td>' + moneyFull(p.nph) + '/hr</td><td><span class="verdict ' + p.verdict + '">' + p.verdict + '</span></td></tr>';
+        }).join('') + '</table>' +
+        '<p><b>' + plan.picks.length + ' picks · ' + moneyFull(capital - plan.unallocated) + ' placed · expected net ' + moneyFull(plan.net) +
+        ' (P25–P75 ' + moneyFull(plan.low) + ' – ' + moneyFull(plan.high) + ')</b> · fees ' + moneyFull(plan.fees) +
+        ' · ' + plan.hoursWk.toFixed(1) + ' h/week' + (plan.unallocated > 0.5 ? ' · ' + moneyFull(plan.unallocated) + ' unallocated' : '') + '.</p>';
+    }
+    body += '<p class="planmethod">Greedy by net per dollar: opens at 2× break-even deposit, at most 30% of capital in one, at most 6 picks, within your weekly hours. Net = deposit × value/TVL × odds − fees, priced with the board’s own numbers.</p>';
+    $('planner').innerHTML = body;
+    var c2 = $('plancap'), h2 = $('planhrs');
+    if (c2) c2.addEventListener('input', renderPlanner);
+    if (h2) h2.addEventListener('input', renderPlanner);
+  }
+  renderPlanner();
 
   /* ---- validation strip: the key held-out numbers, above the board ---- */
   $('valstrip').innerHTML =
     '<b>Validation (held out):</b> curve log₁₀ mcap = ' + (curve.intercept || 0).toFixed(3) + ' + ' + (curve.slope || 0).toFixed(3) + ' · log₁₀ TVL · ' +
     'leave-one-out miss ×' + (curve.looMiss || 0).toFixed(2) + ' (flat ×' + (curve.looFlatMiss || 0).toFixed(2) + ') · ' +
     'walk-forward ×' + (curve.walkFwdMiss || 0).toFixed(2) + ' / ×' + (curve.walkBackMiss || 0).toFixed(2) + ' · ' +
+    'category-blind ×' + (((curve.loco || {}).median) || 0).toFixed(2) + ' · ' +
     'odds Brier ' + (odds.brier || 0).toFixed(3) + ' vs base ' + (odds.brierBase || 0).toFixed(3) + ' · ' +
     'ranges P25–P75 ×' + (curve.p25 || 0).toFixed(2) + '–×' + (curve.p75 || 0).toFixed(2) + ' · ' +
     ((curve.keptTerms || []).length + (curve.droppedTerms || []).length) + ' curve terms tested, ' + (curve.keptTerms || []).length + ' kept · ' +
@@ -142,6 +242,7 @@
     '<tr><td>Leave-one-out miss</td><td>×' + (curve.looMiss || 0).toFixed(2) + ' (flat ×' + (curve.looFlatMiss || 0).toFixed(2) + ')</td></tr>' +
     '<tr><td>Walk-forward, old → new</td><td>×' + (curve.walkFwdMiss || 0).toFixed(2) + '</td></tr>' +
     '<tr><td>Walk-forward, new → old</td><td>×' + (curve.walkBackMiss || 0).toFixed(2) + '</td></tr>' +
+    '<tr><td>Category-blind (leave-one-category-out)</td><td>×' + (((curve.loco || {}).median) || 0).toFixed(2) + ' median over ' + (((curve.loco || {}).per) || []).length + ' categories (worst: ' + esc((((curve.loco || {}).worst) || {}).category || '—') + ' ×' + ((((curve.loco || {}).worst) || {}).miss || 0).toFixed(2) + ')</td></tr>' +
     '<tr><td>Kept terms</td><td>' + esc((curve.keptTerms || []).join(', ') || 'none') + '</td></tr>' +
     '<tr><td>Tested, not used</td><td>' + esc((curve.droppedTerms || []).join(', ') || 'none') + '</td></tr>' +
     '<tr><td>7-day growth multiplier</td><td>' + esc(gmText) + '</td></tr>' +
@@ -270,7 +371,7 @@
     $('rows').innerHTML = list.map(function (r) {
       return '<tr data-slug="' + esc(r.slug) + '">' +
         '<td class="num">' + r.rank + '</td>' +
-        '<td class="name">' + esc(r.name) + '<br><span style="color:var(--faint);font-weight:400">' + esc(r.slug) + '</span></td>' +
+        '<td class="name">' + esc(r.name) + '</td>' +
         '<td>' + esc(r.category || '—') + '</td>' +
         '<td class="num">' + money(r.tvl_usd) + '</td>' +
         '<td class="num">' + money(r.value_if_launches) + '</td>' +

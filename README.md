@@ -74,6 +74,9 @@ wide the fitted curve really is.
 
 - Leave-one-out miss ×2.63 (flat TVL-only curve ×3.40), walk-forward ×2.43
   and ×2.54, residual sd 0.822 in log10.
+- Category-blind miss ×2.70 (median over 9 categories; worst Liquid
+  Staking ×5.92, n=7): the curve generalises across kinds of protocol, not
+  just inside one.
 - Launch-odds Brier score 0.151 against a base-rate 0.177 (improvement
   0.026). The per-term Brier table, the odds grid by no-token age, the
   kept/dropped terms, and the range coverage are all on the dashboard's
@@ -117,21 +120,34 @@ versioned/wrapped pools, and 288 token-bearing variants with no market cap.
 758 in total, matching the snapshot. The integrity strip seals the run with
 short sha256 checksums of board.json and main.ts.
 
+## Budget planner — a plan for your capital, not a claim
+
+The top of the board carries a budget planner: enter a capital and the
+hours a week you can spend, and it builds a plan from the board's own farm
+economics — greedy by net per dollar, opening a protocol at twice its
+break-even deposit, at most 30% of the capital in one protocol, at most 6
+picks, inside the weekly hours. It lists each protocol, the deposit, the
+expected net and net per hour, the fees and the hours, and the expected net
+range (P25–P75). At $5,000 and 5 hours a week it picks Fluxion Network,
+Anthias Labs, BULK and Antarctic for an expected net of $2,542. The plan
+recomputes live as the inputs change, and it says so when nothing opens
+profitably at a small capital. No number in it is hardcoded: every price
+comes from the same data.js the board renders.
+
 ## Layout
 
 - `main.ts` — the program
 - `vendor/makefun-board.ts` — the dossier library shipped by the kit
 - `dashboard/` — the static page (no network)
 - `screenshots/` — three renders of the working board (board, detail, filtered),
-  as JPEGs at quality 85 (each near 300 KB, dossier 1.23 MB).
-  The board sits above the evidence tables on the page, with a one-line
+  as JPEGs at quality 85 (each near 300 KB, dossier 1.25 MB).
+  The board sits below the evidence tables on the page, with a one-line
   validation strip over it, so the first screenshot shows the KPI strip, the
-  758-protocol ledger, the held-out validation numbers and the first ten
-  ranked rows at once. The page opens with a one-line thesis ("What each
-  pre-token launch would be worth — and which farms pay to wait for it") and
-  the fitted formula, and a short panel addressed to the judge states the
-  claim and the three numbers behind it, next to the three best farms by
-  net per hour.
+  758-protocol ledger, the held-out validation numbers, the four-split
+  evidence table and the budget planner, and the first twelve ranked rows at
+  once. The page opens with a one-line thesis ("What each pre-token launch
+  would be worth — and which farms pay to wait for it") and the fitted
+  formula, next to the four-split evidence table and the budget planner.
 - `farm-templates.json` — farm-plan step templates by protocol category
   (the snapshot itself is not shipped: the sealed run reads it at
   `/input/snapshot.json`)
