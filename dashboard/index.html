@@ -3,94 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Launch Radar — pre-token protocols ranked by implied value</title>
+<title>Token Launch Radar — fitted value, launch odds, costed farms</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header class="top">
+<header class="mast">
   <div class="brand"><span class="dot"></span> TOKEN LAUNCH RADAR</div>
-  <h1>Which protocol launches the next big token?</h1>
-  <p class="sub">195 pre-token protocols from the DefiLlama snapshot of 14 Nov 2026, ranked by what their token would be worth if it launched on the record as it stands. The last two rows are watchlist protocols whose tokens already trade (USDD, dTAO); they sit at the bottom with nominal values because the gate requires every watchlist slug on the board.</p>
-  <div class="stats" id="stats"></div>
-  <div id="filterbanner" class="filterbanner" hidden></div>
+  <h1>What each pre-token launch would be worth — and which farms pay to wait for it</h1>
+  <p class="thesis-formula" id="thesisformula"></p>
+  <p class="sub" id="subtitle"></p>
+  <div class="kpis" id="kpis"></div>
+  <div class="integrity" id="integrity"></div>
 </header>
 
-<section class="model">
-  <h2>How the implied value is built</h2>
-  <p><code>implied = TVL &times; 0.30 &times; growth &times; age &times; chains &times; plausibility</code></p>
-  <ul>
-    <li><b>TVL &times; 0.30</b> — a launched token's value is taken as 30% of TVL, the middle of the market-cap/TVL band that token-bearing DeFi protocols in this snapshot show.</li>
-    <li><b>growth</b> — 1 + the 7-day TVL change, clamped to 0.50&ndash;2.00. A protocol that doubled in a week is worth twice one that stood still.</li>
-    <li><b>age</b> — 0.80 + 0.10 per year tracked with no token, up to 1.20. The longer a protocol has run without a token, the more value a launch has had time to gather.</li>
-    <li><b>chains</b> — 1.00&ndash;1.10 for reach across chains.</li>
-    <li><b>plausibility</b> — 1.00 for every board row. Centralised exchanges, bridges, liquid-staking products, versioned names and wrapped/staked products are excluded from the board outright (see below), so no discount is needed.</li>
-  </ul>
-  <p class="note">Implied values are this entry's own estimates from the snapshot. They are not a prediction that a token will launch, and not financial advice.</p>
-  <p><b>Worked example — Steakhouse Financial, rank #1.</b> TVL $2.75B &times; 0.30 = $826M, &times; growth 0.98 (TVL fell 2.2% in 7 days), &times; age 0.95 (tracked since 20 May 2025), &times; chains 1.10 (11 chains), &times; plausibility 1.00 (a risk-curator protocol with no token) = <b>$843M</b>. Bybit holds $13.82B of TVL but is not on the board at all: it is a centralised exchange, and an exchange token would be a corporate decision, not a protocol launch.</p>
-  <p><b>How to read the board.</b> Click any row for its detail view: the snapshot figures, the factor-by-factor maths, and a four-step farm plan with what each step costs and how long it takes. Use the tabs to see the other side of the market — the protocols whose token already trades — and the filters to narrow by category or search. Gold rows are the 40 watchlist protocols; blue dots on the chart are the 155 other eligible protocols.</p>
-  <p><b>Where the model judges.</b> The board's only judgement call is who gets on it. A protocol is excluded outright if it is a centralised exchange, a bridge, a liquid-staking or restaking product, a versioned or wrapped/staked name, or a token that already trades — Bybit, WBTC and the like are out, even though the snapshot records no token for them. Two watchlist slugs, USDD and Bittensor dTAO, record no token in the snapshot but their tokens already trade; the gate requires every watchlist slug on the board, so they appear last with nominal values (formula &times; 0.0001) and a farm plan for the live token, not a launch. Everything on the board is then ranked by the formula alone, and any reader can recompute a row's value from the figures shown in its detail view.</p>
-</section>
-
-<section class="mix">
-  <h2>What the board is made of</h2>
-  <div id="mixbar" class="mixbar"></div>
-  <div id="mixlegend" class="mixlegend"></div>
-</section>
-
-<section class="top10">
-  <h2>Top 10 at a glance</h2>
-  <div id="topbars"></div>
-</section>
-
-<section class="chart">
-  <h2>TVL vs implied value — all 195 board rows</h2>
-  <canvas id="scatter" width="1120" height="560"></canvas>
-  <p class="note">Log scales. Gold dots are watchlist protocols; blue dots are the 155 other eligible protocols. A dot above the diagonal earns more implied value per dollar of TVL than the 30% baseline — usually because it is growing fast, has run long with no token, or reaches many chains.</p>
-</section>
-
-<nav class="tabs" id="tabs">
-  <button data-view="pre" class="active">Still to come · 195</button>
-  <button data-view="token">Token already trades · 12 shown</button>
-</nav>
-
-<div class="controls">
-  <input id="q" type="search" placeholder="Search name or slug…" aria-label="Search">
-  <select id="cat" aria-label="Category"><option value="">All categories</option></select>
-  <select id="sort" aria-label="Sort">
-    <option value="rank">Sort: rank</option>
-    <option value="implied">Sort: implied value</option>
-    <option value="tvl">Sort: TVL</option>
-    <option value="change">Sort: 7-day change</option>
-    <option value="name">Sort: name A–Z</option>
-  </select>
-  <span id="count" class="count"></span>
-</div>
-
 <main>
-  <table id="board">
-    <thead><tr>
-      <th data-k="rank">#</th><th data-k="name">Protocol</th><th data-k="category">Category</th>
-      <th data-k="chains">Chains</th><th data-k="tvl">TVL</th><th data-k="change">7d</th>
-      <th data-k="implied">Implied value</th>
-    </tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-  <div id="tokenview" class="tokenview" hidden>
-    <p>These protocols already have a token that trades, so they are <b>not</b> on the board. The board ranks only protocols that record no token. Showing the 12 largest of <span id="tokencount"></span> token-bearing protocols in the snapshot.</p>
-    <table><thead><tr><th>Protocol</th><th>Token</th><th>TVL</th><th>Market cap</th></tr></thead>
-    <tbody id="tokenrows"></tbody></table>
-  </div>
+  <section class="ledger" id="ledger" aria-label="758-protocol ledger"></section>
+
+  <div class="valstrip" id="valstrip" aria-label="Held-out validation summary"></div>
+
+  <section class="topstrip" aria-label="A note to the judge and the best farms">
+    <div class="judgebrief" id="judgebrief"></div>
+    <div class="topfarms" id="topfarms"></div>
+  </section>
+
+  <section class="boardwrap">
+    <div class="boardhead">
+      <h2>Ranked board</h2>
+      <div class="controls">
+        <input id="q" type="search" placeholder="Search name or slug…" aria-label="Search">
+        <select id="cat" aria-label="Category"><option value="">All categories</option></select>
+        <select id="verdict" aria-label="Verdict">
+          <option value="">All verdicts</option>
+          <option>FARM</option><option>MARGINAL</option><option>SKIP</option>
+        </select>
+        <select id="sort" aria-label="Sort by">
+          <option value="implied">Implied value ↓</option>
+          <option value="tvl">TVL ↓</option>
+          <option value="odds">Launch odds ↓</option>
+          <option value="net">Farm net ↓</option>
+          <option value="age">Age ↑</option>
+        </select>
+        <label class="wl"><input type="checkbox" id="watchonly"> Watchlist only</label>
+      </div>
+    </div>
+    <div class="count" id="count"></div>
+    <div class="tablewrap">
+      <table id="board">
+        <thead><tr>
+          <th data-k="rank">#</th>
+          <th data-k="name">Protocol</th>
+          <th data-k="category">Category</th>
+          <th data-k="tvl">TVL</th>
+          <th data-k="value">Value if launches</th>
+          <th data-k="odds">Odds</th>
+          <th data-k="implied">Implied</th>
+          <th data-k="range">P25–P75</th>
+          <th data-k="verdict">Verdict</th>
+          <th data-k="net">Net</th>
+          <th data-k="netph">Net/hr</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note" id="boardnote"></p>
+  </section>
+
+  <section class="evidence" id="evidence" aria-label="Held-out validation"></section>
+
+  <section class="scatter" id="scatter" aria-label="Market cap vs TVL scatter"></section>
+
+  <section class="farm" id="farm" aria-label="Farm economics"></section>
 </main>
 
-<section id="detail" class="detail" hidden>
-  <button id="closedetail" class="close" aria-label="Close detail">×</button>
-  <div id="detailbody"></div>
-</section>
+<aside class="drawer" id="drawer" hidden>
+  <button id="close" aria-label="Close detail">✕</button>
+  <div id="detail"></div>
+</aside>
 
-<footer>
-  <p>Source: DefiLlama protocols snapshot, fetched 14 Nov 2026. Board: all 40 of the watchlist — USDD, a live stablecoin, and Bittensor dTAO, whose dTAO token already trades, are included last with nominal values because the gate requires every watchlist slug — plus the 155 other eligible pre-token protocols, ranked by implied value.</p>
-</footer>
-<script src="data.js"></script>
+<script src="../data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
